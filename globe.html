@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive 3D Earth Globe | Three.js</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #02050d;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Square 1:1 Canvas Container */
+    #stage {
+      position: relative;
+      width: min(88vmin, 820px);
+      height: min(88vmin, 820px);
+      aspect-ratio: 1 / 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 24px;
+      background: radial-gradient(circle at 50% 50%, rgba(14, 30, 64, 0.45) 0%, rgba(2, 5, 13, 0.95) 75%, #02050d 100%);
+      box-shadow: 0 0 80px rgba(76, 195, 255, 0.08), inset 0 0 60px rgba(0, 0, 0, 0.8);
+      border: 1px solid rgba(76, 195, 255, 0.15);
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
+      aspect-ratio: 1 / 1;
+      display: block;
+      outline: none;
+      border-radius: 24px;
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
+    }
+
+    /* Top HUD Info Pill */
+    .hud-top {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      border-radius: 9999px;
+      background: rgba(4, 13, 30, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(76, 195, 255, 0.35);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+      z-index: 20;
+      pointer-events: auto;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .hud-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4cc3ff;
+      box-shadow: 0 0 10px #4cc3ff;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Selected Territory Card (near bottom of canvas) */
+    #selection-card {
+      position: absolute;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 20px;
+      border-radius: 18px;
+      background: rgba(6, 16, 36, 0.92);
+      backdrop-filter: blur(16px);
+      border: 1.5px solid #ff1a1a;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75), 0 0 24px rgba(255, 26, 26, 0.35);
+      z-index: 20;
+      min-width: 280px;
+      max-width: 90%;
+    }
+    #selection-card.active {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .territory-badge {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ff1a1a;
+      box-shadow: 0 0 14px #ff1a1a;
+      flex-shrink: 0;
+    }
+    .territory-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .territory-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: 0.02em;
+    }
+    .territory-meta {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    /* Reset Button */
+    #reset-btn {
+      position: absolute;
+      bottom: 22px;
+      right: 22px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 16px;
+      border-radius: 12px;
+      background: rgba(14, 30, 64, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(76, 195, 255, 0.4);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      z-index: 20;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+    }
+    #reset-btn:hover {
+      background: rgba(76, 195, 255, 0.25);
+      border-color: #4cc3ff;
+      box-shadow: 0 0 15px rgba(76, 195, 255, 0.4);
+      transform: translateY(-1px);
+    }
+    #reset-btn:active {
+      transform: translateY(0);
+    }
+
+    /* Hover Tooltip */
+    #hover-tooltip {
+      position: absolute;
+      pointer-events: none;
+      z-index: 30;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: rgba(3, 10, 24, 0.94);
+      border: 1px solid rgba(76, 195, 255, 0.6);
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      transform: translate(-50%, -130%);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+    }
+    #hover-tooltip.active {
+      opacity: 1;
+    }
+
+    /* Loading Overlay */
+    #loader {
+      position: absolute;
+      inset: 0;
+      background: #02050d;
+      border-radius: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 40;
+      transition: opacity 0.5s ease;
+    }
+    #loader.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border: 3px solid rgba(76, 195, 255, 0.15);
+      border-top-color: #4cc3ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .loader-text {
+      font-size: 12px;
+      color: #94a3b8;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+  </style>
+
+  <!-- Import maps for clean Three.js ES module loading -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <div id="stage">
+    <!-- Top Status Pill -->
+    <div class="hud-top">
+      <div class="hud-dot" id="status-dot"></div>
+      <span id="status-text">Global Orbit • Click territory to inspect</span>
+    </div>
+
+    <!-- Selected State Info Card -->
+    <div id="selection-card">
+      <div class="territory-badge"></div>
+      <div class="territory-info">
+        <div class="territory-name" id="card-title">Territory Name</div>
+        <div class="territory-meta" id="card-meta">Country • Admin-1 Jurisdiction</div>
+      </div>
+    </div>
+
+    <!-- Reset Button -->
+    <button id="reset-btn" title="Clear selection and resume rotation">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+      <span>Reset</span>
+    </button>
+
+    <!-- Hover Tooltip -->
+    <div id="hover-tooltip"></div>
+
+    <!-- Loading Screen -->
+    <div id="loader">
+      <div class="spinner"></div>
+      <div class="loader-text">Loading High-Res Earth &amp; Vector Boundaries...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // =========================================================================
+    // 1. CONSTANTS & GEOMETRIC SETUP
+    // =========================================================================
+    const SPHERE_RADIUS = 1.0;
+    const CAMERA_FOV = 45;
+    // Camera distance chosen so the globe has ~10% padding on all sides inside the 1:1 square
+    const CAMERA_DISTANCE = 2.85;
+
+    const stageEl = document.getElementById('stage');
+    const statusTextEl = document.getElementById('status-text');
+    const statusDotEl = document.getElementById('status-dot');
+    const selectionCardEl = document.getElementById('selection-card');
+    const cardTitleEl = document.getElementById('card-title');
+    const cardMetaEl = document.getElementById('card-meta');
+    const resetBtnEl = document.getElementById('reset-btn');
+    const tooltipEl = document.getElementById('hover-tooltip');
+    const loaderEl = document.getElementById('loader');
+
+    // =========================================================================
+    // 2. SCENE, CAMERA & RENDERER (PERFECT 1:1 ASPECT RATIO)
+    // =========================================================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x02050d);
+
+    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 100);
+    camera.position.set(0, 0, CAMERA_DISTANCE);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      alpha: false
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.25;
+    stageEl.appendChild(renderer.domElement);
+
+    // Post-processing: Subtle UnrealBloomPass for glowing network lines and city lights
+    const renderPass = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(1024, 1024),
+      0.65, // strength
+      0.45, // radius
+      0.55  // threshold
+    );
+    const outputPass = new OutputPass();
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    composer.addPass(outputPass);
+
+    // Resize Handler maintaining exact square geometry
+    const handleResize = () => {
+      const size = Math.min(stageEl.clientWidth, stageEl.clientHeight);
+      renderer.setSize(size, size);
+      composer.setSize(size, size);
+      camera.aspect = 1.0;
+      camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    // OrbitControls: manual rotation, no pan, limited zoom, damping enabled
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enablePan = false;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 2.2;
+    controls.maxDistance = 4.2;
+    controls.rotateSpeed = 0.65;
+
+    // Hierarchy Groups
+    // Base root container
+    const globeGroup = new THREE.Group();
+    scene.add(globeGroup);
+
+    // Rotating globe inner container (rotates around vertical Y axis)
+    const earthRotator = new THREE.Group();
+    globeGroup.add(earthRotator);
+
+    // =========================================================================
+    // 3. EARTH SPHERE (FULL 128x128 SPHERE & NASA NIGHT LIGHTS)
+    // =========================================================================
+    const textureLoader = new THREE.TextureLoader();
+    const earthNightUrl = 'https://unpkg.com/three-globe/example/img/earth-night.jpg';
+    const earthTopoUrl = 'https://unpkg.com/three-globe/example/img/earth-topology.png';
+
+    const earthNightTex = textureLoader.load(earthNightUrl, () => {
+      maybeHideLoader();
+    });
+    earthNightTex.colorSpace = THREE.SRGBColorSpace;
+
+    const earthTopoTex = textureLoader.load(earthTopoUrl);
+
+    // Sphere Geometry (128x128 segments for smooth circular outline)
+    const earthGeometry = new THREE.SphereGeometry(SPHERE_RADIUS, 128, 128);
+
+    const earthMaterial = new THREE.MeshStandardMaterial({
+      map: earthNightTex,
+      bumpMap: earthTopoTex,
+      bumpScale: 0.035,
+      roughness: 0.72,
+      metalness: 0.12,
+      emissive: new THREE.Color(0xffaa44),
+      emissiveMap: earthNightTex,
+      emissiveIntensity: 0.85,
+    });
+
+    const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+    earthRotator.add(earthMesh);
+
+    // Ambient Lighting & Subtle Key Directional Light
+    const ambientLight = new THREE.AmbientLight(0x0f2244, 1.8);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0x7dd3fc, 1.2);
+    sunLight.position.set(5, 3, 5);
+    scene.add(sunLight);
+
+    // =========================================================================
+    // 4. ATMOSPHERE GLOW (SOFT BLUE #3aa0ff FRESNEL / BACKSIDE SHADER)
+    // =========================================================================
+    const atmosphereShader = {
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        void main() {
+          // Fresnel rim factor based on view normal
+          float intensity = pow(0.68 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.6);
+          gl_FragColor = vec4(0.227, 0.627, 1.0, 1.0) * intensity * 1.5;
+        }
+      `
+    };
+
+    const atmosphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS * 1.085, 96, 96);
+    const atmosphereMat = new THREE.ShaderMaterial({
+      vertexShader: atmosphereShader.vertexShader,
+      fragmentShader: atmosphereShader.fragmentShader,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+    });
+    const atmosphereMesh = new THREE.Mesh(atmosphereGeo, atmosphereMat);
+    scene.add(atmosphereMesh);
+
+    // Inner subtle limb glow
+    const innerLimbShader = {
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        void main() {
+          float rim = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
+          float alpha = pow(rim, 3.8) * 0.75;
+          gl_FragColor = vec4(0.227, 0.627, 1.0, alpha);
+        }
+      `
+    };
+    const innerLimbMat = new THREE.ShaderMaterial({
+      vertexShader: innerLimbShader.vertexShader,
+      fragmentShader: innerLimbShader.fragmentShader,
+      blending: THREE.AdditiveBlending,
+      side: THREE.FrontSide,
+      transparent: true,
+      depthWrite: false
+    });
+    const innerLimbMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS * 1.002, 96, 96), innerLimbMat);
+    earthRotator.add(innerLimbMesh);
+
+    // =========================================================================
+    // 5. COORDINATE CONVERSION UTILITIES (EXACT THREE.JS TEXTURE MAPPING)
+    // =========================================================================
+    // Standard Three.js Sphere UV mapping:
+    // u = 0 is at lng = -180, u = 0.5 is at lng = 0 (Greenwich), u = 1 is at lng = 180
+    // theta = (lng + 180) * PI / 180
+    // phi = (90 - lat) * PI / 180
+    // x = -R * sin(phi) * cos(theta)
+    // z =  R * sin(phi) * sin(theta)
+    // y =  R * cos(phi)
+    function latLngToVector3(lat, lng, radius = SPHERE_RADIUS) {
+      const phi = (90 - lat) * (Math.PI / 180);
+      const theta = (lng + 180) * (Math.PI / 180);
+      const x = -(radius * Math.sin(phi) * Math.cos(theta));
+      const z =  (radius * Math.sin(phi) * Math.sin(theta));
+      const y =  (radius * Math.cos(phi));
+      return new THREE.Vector3(x, y, z);
+    }
+
+    // Inverse conversion: from 3D unit point on sphere to lat/lng
+    function vector3ToLatLng(vec) {
+      const v = vec.clone().normalize();
+      const lat = Math.asin(Math.max(-1, Math.min(1, v.y))) * (180 / Math.PI);
+      const theta = Math.atan2(v.z, -v.x);
+      let lng = (theta * 180 / Math.PI) - 180;
+      if (lng < -180) lng += 360;
+      if (lng > 180) lng -= 360;
+      return { lat, lng };
+    }
+
+    // =========================================================================
+    // 6. GLOWING NETWORK ARCS & NODES (ORANGE #ff9a2e & BLUE #4cc3ff)
+    // =========================================================================
+    const MAJOR_GLOBAL_CITIES = [
+      { name: "New York", lat: 40.7128, lng: -74.0060 },
+      { name: "London", lat: 51.5074, lng: -0.1278 },
+      { name: "Tokyo", lat: 35.6762, lng: 139.6503 },
+      { name: "Paris", lat: 48.8566, lng: 2.3522 },
+      { name: "Dubai", lat: 25.2048, lng: 55.2708 },
+      { name: "Singapore", lat: 1.3521, lng: 103.8198 },
+      { name: "Mumbai", lat: 19.0760, lng: 72.8777 },
+      { name: "Sydney", lat: -33.8688, lng: 151.2093 },
+      { name: "San Francisco", lat: 37.7749, lng: -122.4194 },
+      { name: "São Paulo", lat: -23.5505, lng: -46.6333 },
+      { name: "Frankfurt", lat: 50.1109, lng: 8.6821 },
+      { name: "Hong Kong", lat: 22.3193, lng: 114.1694 },
+      { name: "New Delhi", lat: 28.6139, lng: 77.2090 },
+      { name: "Johannesburg", lat: -26.2041, lng: 28.0473 },
+      { name: "Seoul", lat: 37.5665, lng: 126.9780 },
+      { name: "Toronto", lat: 43.6532, lng: -79.3832 }
+    ];
+
+    const CITY_PAIRS = [
+      [0, 1, 0xff9a2e],  // NY - London (Orange)
+      [1, 2, 0x4cc3ff],  // London - Tokyo (Blue)
+      [1, 4, 0x4cc3ff],  // London - Dubai
+      [4, 6, 0xff9a2e],  // Dubai - Mumbai
+      [6, 5, 0x4cc3ff],  // Mumbai - Singapore
+      [5, 2, 0xff9a2e],  // Singapore - Tokyo
+      [2, 8, 0x4cc3ff],  // Tokyo - San Francisco
+      [8, 0, 0xff9a2e],  // SF - NY
+      [0, 9, 0x4cc3ff],  // NY - São Paulo
+      [1, 10, 0xff9a2e], // London - Frankfurt
+      [10, 4, 0x4cc3ff], // Frankfurt - Dubai
+      [6, 12, 0xff9a2e], // Mumbai - Delhi
+      [2, 7, 0x4cc3ff],  // Tokyo - Sydney
+      [5, 7, 0xff9a2e],  // Singapore - Sydney
+      [0, 15, 0x4cc3ff], // NY - Toronto
+      [1, 13, 0xff9a2e], // London - Joburg
+      [2, 14, 0x4cc3ff], // Tokyo - Seoul
+      [11, 2, 0xff9a2e]  // HK - Tokyo
+    ];
+
+    const arcsGroup = new THREE.Group();
+    earthRotator.add(arcsGroup);
+
+    // Glowing Node Points at cities
+    const nodeGeo = new THREE.SphereGeometry(0.012, 16, 16);
+    MAJOR_GLOBAL_CITIES.forEach(city => {
+      const pos = latLngToVector3(city.lat, city.lng, SPHERE_RADIUS * 1.004);
+      const nodeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const nodeMesh = new THREE.Mesh(nodeGeo, nodeMat);
+      nodeMesh.position.copy(pos);
+      arcsGroup.add(nodeMesh);
+
+      // Soft corona halo around city node
+      const haloGeo = new THREE.RingGeometry(0.016, 0.032, 24);
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: 0x4cc3ff,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.75,
+        blending: THREE.AdditiveBlending
+      });
+      const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+      haloMesh.position.copy(pos);
+      haloMesh.lookAt(0, 0, 0);
+      arcsGroup.add(haloMesh);
+    });
+
+    // Great-Circle Arc Geometry with animated travelling dashes
+    const animatedArcPulses = [];
+
+    CITY_PAIRS.forEach(([fromIdx, toIdx, colorHex]) => {
+      const fromCity = MAJOR_GLOBAL_CITIES[fromIdx];
+      const toCity = MAJOR_GLOBAL_CITIES[toIdx];
+
+      const p1 = latLngToVector3(fromCity.lat, fromCity.lng, SPHERE_RADIUS * 1.002);
+      const p2 = latLngToVector3(toCity.lat, toCity.lng, SPHERE_RADIUS * 1.002);
+
+      // Intermediate arc control points curved above the globe surface
+      const distance = p1.distanceTo(p2);
+      const mid = p1.clone().add(p2).multiplyScalar(0.5);
+      const midLen = mid.length();
+      // Altitude proportional to distance, rising elegantly up to ~0.25 sphere radius
+      const arcAltitude = SPHERE_RADIUS + (distance * 0.28);
+      mid.normalize().multiplyScalar(arcAltitude);
+
+      const curve = new THREE.QuadraticBezierCurve3(p1, mid, p2);
+      const points = curve.getPoints(64);
+      const arcGeo = new THREE.BufferGeometry().setFromPoints(points);
+
+      // Base static glow line
+      const arcMat = new THREE.LineBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.35,
+        blending: THREE.AdditiveBlending
+      });
+      const arcLine = new THREE.Line(arcGeo, arcMat);
+      arcsGroup.add(arcLine);
+
+      // Travelling luminous node packet moving along the arc
+      const pulseGeo = new THREE.SphereGeometry(0.014, 12, 12);
+      const pulseMat = new THREE.MeshBasicMaterial({
+        color: colorHex === 0xff9a2e ? 0xffdf80 : 0xe0f2fe,
+        blending: THREE.AdditiveBlending
+      });
+      const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
+      arcsGroup.add(pulseMesh);
+
+      animatedArcPulses.push({
+        curve,
+        mesh: pulseMesh,
+        progress: Math.random(),
+        speed: 0.16 + Math.random() * 0.12
+      });
+    });
+
+    // =========================================================================
+    // 7. GEOJSON BOUNDARIES & HIGH-PERFORMANCE CANVAS TEXTURE DRAPING
+    // =========================================================================
+    // We draw countries & admin-1 boundaries and the RED state highlight onto a
+    // dedicated 4096x2048 overlay canvas draped over the sphere. This gives 100%
+    // distortion-free, curvature-perfect highlighting following the exact borders.
+    const BORDER_CANVAS_WIDTH = 4096;
+    const BORDER_CANVAS_HEIGHT = 2048;
+
+    const overlayCanvas = document.createElement('canvas');
+    overlayCanvas.width = BORDER_CANVAS_WIDTH;
+    overlayCanvas.height = BORDER_CANVAS_HEIGHT;
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    const overlayTexture = new THREE.CanvasTexture(overlayCanvas);
+    overlayTexture.colorSpace = THREE.SRGBColorSpace;
+    overlayTexture.generateMipmaps = true;
+
+    // Overlay mesh with tiny offset (1.003 radius) so it hovers smoothly on top
+    const overlayGeo = new THREE.SphereGeometry(SPHERE_RADIUS * 1.003, 128, 128);
+    const overlayMat = new THREE.MeshBasicMaterial({
+      map: overlayTexture,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending
+    });
+    const overlayMesh = new THREE.Mesh(overlayGeo, overlayMat);
+    earthRotator.add(overlayMesh);
+
+    // Coordinate conversion from geojson [lng, lat] to canvas [x, y]
+    function lngLatToCanvasXY(lng, lat) {
+      const x = ((lng + 180) / 360) * BORDER_CANVAS_WIDTH;
+      const y = ((90 - lat) / 180) * BORDER_CANVAS_HEIGHT;
+      return [x, y];
+    }
+
+    let admin1Data = null;
+    let countriesData = null;
+    let selectedFeature = null;
+    let hoveredFeature = null;
+
+    // Point in Polygon algorithm for arbitrary GeoJSON coordinates
+    function pointInPolygon(point, vs) {
+      const x = point[0], y = point[1];
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i][0], yi = vs[i][1];
+        const xj = vs[j][0], yj = vs[j][1];
+        const intersect = ((yi > y) !== (yj > y)) &&
+          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function isPointInFeature(lng, lat, feature) {
+      if (!feature || !feature.geometry) return false;
+      const geom = feature.geometry;
+
+      if (geom.type === 'Polygon') {
+        const coords = geom.coordinates;
+        if (!pointInPolygon([lng, lat], coords[0])) return false;
+        // Check holes
+        for (let i = 1; i < coords.length; i++) {
+          if (pointInPolygon([lng, lat], coords[i])) return false;
+        }
+        return true;
+      } else if (geom.type === 'MultiPolygon') {
+        for (const poly of geom.coordinates) {
+          if (pointInPolygon([lng, lat], poly[0])) {
+            let inHole = false;
+            for (let i = 1; i < poly.length; i++) {
+              if (pointInPolygon([lng, lat], poly[i])) {
+                inHole = true;
+                break;
+              }
+            }
+            if (!inHole) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // Find which territory/state or country contains given lat/lng
+    function findFeatureAtLatLng(lng, lat) {
+      // 1. First search admin-1 states/provinces
+      if (admin1Data && admin1Data.features) {
+        for (const feat of admin1Data.features) {
+          if (isPointInFeature(lng, lat, feat)) {
+            return feat;
+          }
+        }
+      }
+      // 2. If not found in admin-1 (e.g. smaller countries without state breakdown), search countries
+      if (countriesData && countriesData.features) {
+        for (const feat of countriesData.features) {
+          if (isPointInFeature(lng, lat, feat)) {
+            return feat;
+          }
+        }
+      }
+      return null;
+    }
+
+    // Render boundaries & highlighting to overlay canvas
+    function redrawOverlay() {
+      overlayCtx.clearRect(0, 0, BORDER_CANVAS_WIDTH, BORDER_CANVAS_HEIGHT);
+
+      // Helper to trace polygon ring
+      function traceRing(ring) {
+        if (!ring || ring.length < 2) return;
+        let [x0, y0] = lngLatToCanvasXY(ring[0][0], ring[0][1]);
+        overlayCtx.moveTo(x0, y0);
+
+        for (let i = 1; i < ring.length; i++) {
+          const p = ring[i];
+          const prev = ring[i - 1];
+          // Check for antimeridian wrap (180 to -180)
+          if (Math.abs(p[0] - prev[0]) > 180) {
+            let [x, y] = lngLatToCanvasXY(p[0], p[1]);
+            overlayCtx.moveTo(x, y);
+          } else {
+            let [x, y] = lngLatToCanvasXY(p[0], p[1]);
+            overlayCtx.lineTo(x, y);
+          }
+        }
+      }
+
+      function traceFeatureGeometry(feature) {
+        const geom = feature.geometry;
+        if (!geom) return;
+        if (geom.type === 'Polygon') {
+          geom.coordinates.forEach(ring => traceRing(ring));
+        } else if (geom.type === 'MultiPolygon') {
+          geom.coordinates.forEach(poly => poly.forEach(ring => traceRing(ring)));
+        }
+      }
+
+      // 1. Draw subtle countries boundaries (thin faint cyan lines)
+      if (countriesData && countriesData.features) {
+        overlayCtx.beginPath();
+        overlayCtx.strokeStyle = 'rgba(76, 195, 255, 0.28)';
+        overlayCtx.lineWidth = 1.2;
+        countriesData.features.forEach(f => traceFeatureGeometry(f));
+        overlayCtx.stroke();
+      }
+
+      // 2. Draw subtle admin-1 state/province boundaries (subtle dotted/soft borders)
+      if (admin1Data && admin1Data.features) {
+        overlayCtx.beginPath();
+        overlayCtx.strokeStyle = 'rgba(125, 211, 252, 0.20)';
+        overlayCtx.lineWidth = 0.9;
+        admin1Data.features.forEach(f => traceFeatureGeometry(f));
+        overlayCtx.stroke();
+      }
+
+      // 3. Draw Hovered Feature highlight (faint white-blue #4cc3ff ~25% opacity)
+      if (hoveredFeature && hoveredFeature !== selectedFeature) {
+        overlayCtx.save();
+        overlayCtx.beginPath();
+        traceFeatureGeometry(hoveredFeature);
+        overlayCtx.fillStyle = 'rgba(76, 195, 255, 0.22)';
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = 'rgba(224, 242, 254, 0.85)';
+        overlayCtx.lineWidth = 2.5;
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
+
+      // 4. Draw Selected Feature highlight in RED (#ff1a1a, ~70% opacity fill + bright glowing outline)
+      if (selectedFeature) {
+        overlayCtx.save();
+        overlayCtx.beginPath();
+        traceFeatureGeometry(selectedFeature);
+        // Requirement 5: Highlight entire selected state/territory polygon in RED (#ff1a1a, ~70% opacity)
+        overlayCtx.fillStyle = 'rgba(255, 26, 26, 0.72)';
+        overlayCtx.fill();
+
+        // Outer Red Glow effect
+        overlayCtx.shadowColor = '#ff1a1a';
+        overlayCtx.shadowBlur = 24;
+        overlayCtx.strokeStyle = '#ffffff';
+        overlayCtx.lineWidth = 2.8;
+        overlayCtx.stroke();
+
+        overlayCtx.strokeStyle = '#ff3333';
+        overlayCtx.lineWidth = 4.0;
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
+
+      overlayTexture.needsUpdate = true;
+    }
+
+    // Load GeoJSON data with fallback
+    let filesLoaded = 0;
+    function maybeHideLoader() {
+      filesLoaded++;
+      if (filesLoaded >= 2) {
+        setTimeout(() => {
+          loaderEl.classList.add('hidden');
+        }, 300);
+      }
+    }
+
+    async function loadGeoJsonData() {
+      try {
+        // First try local / public cache, fallback to unpkg/raw.githubusercontent
+        const admin1Urls = [
+          '/data/ne_50m_admin_1_states_provinces.geojson',
+          '/data/ne_110m_admin_1_states_provinces.geojson',
+          'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_1_states_provinces.geojson'
+        ];
+
+        for (const url of admin1Urls) {
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              admin1Data = await res.json();
+              console.log('Loaded admin-1 states successfully from:', url);
+              break;
+            }
+          } catch (e) {
+            // try next
+          }
+        }
+
+        const countriesUrls = [
+          '/data/ne_110m_admin_0_countries.geojson',
+          'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson'
+        ];
+
+        for (const url of countriesUrls) {
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              countriesData = await res.json();
+              console.log('Loaded countries successfully from:', url);
+              break;
+            }
+          } catch (e) {
+            // try next
+          }
+        }
+      } catch (err) {
+        console.error('GeoJSON loading error:', err);
+      } finally {
+        redrawOverlay();
+        maybeHideLoader();
+      }
+    }
+    loadGeoJsonData();
+
+    // =========================================================================
+    // 8. ROTATION & CAMERA SMOOTH EASING ANIMATION (TWEEN ENGINE)
+    // =========================================================================
+    let isAutoRotating = true;
+    let autoRotateSpeed = 0.05; // rad/sec
+    let lastUserInteractionTime = performance.now();
+    let isAnimatingToTarget = false;
+    let animationStartTime = 0;
+    const ANIMATION_DURATION = 1500; // ~1.5s ease-in-out
+
+    // Animation state targets
+    let animStartRotY = 0;
+    let animTargetRotY = 0;
+    let animStartRotX = 0;
+    let animTargetRotX = 0;
+
+    // Cubic Ease-In-Out
+    function easeInOutCubic(t) {
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    // Function to calculate rotation required to bring (lat, lng) to FRONT CENTER facing camera (0, 0, 1)
+    function rotateToLatLng(targetLat, targetLng) {
+      isAutoRotating = false;
+      isAnimatingToTarget = true;
+      animationStartTime = performance.now();
+
+      // Current rotations
+      animStartRotY = earthRotator.rotation.y;
+      animStartRotX = globeGroup.rotation.x;
+
+      // To bring lng to face camera (along +Z axis):
+      // When earthRotator.rotation.y = 0, lng = 0 is at (x=0, z=R).
+      // A point at longitude lng has initial angle theta = (lng + 180) degrees.
+      // To bring longitude lng to face camera (+Z axis, theta = 90 deg or z = +R):
+      // We set earthRotator.rotation.y = -(lng * PI / 180).
+      let desiredRotY = -(targetLng * (Math.PI / 180));
+
+      // Choose the shortest angular path to prevent unnecessary multiple spins
+      let currentY = animStartRotY;
+      let diffY = (desiredRotY - currentY) % (Math.PI * 2);
+      if (diffY > Math.PI) diffY -= Math.PI * 2;
+      if (diffY < -Math.PI) diffY += Math.PI * 2;
+      animTargetRotY = currentY + diffY;
+
+      // Latitude tilt: tilt globeGroup.rotation.x so latitude is centered vertically
+      animTargetRotX = (targetLat * (Math.PI / 180));
+    }
+
+    // =========================================================================
+    // 9. RAYCASTING, CLICK & HOVER INTERACTION
+    // =========================================================================
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let isMouseDown = false;
+    let mouseDownPos = { x: 0, y: 0 };
+
+    function getCanvasRelativeCoords(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      return {
+        x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        y: -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect
+      };
+    }
+
+    function getLatLngFromIntersection(intersection) {
+      // Convert intersection point to earthMesh local space
+      const localPoint = earthMesh.worldToLocal(intersection.point.clone());
+      return vector3ToLatLng(localPoint);
+    }
+
+    // Pointer Move: Hover highlight & tooltip
+    renderer.domElement.addEventListener('pointermove', (event) => {
+      lastUserInteractionTime = performance.now();
+      const coords = getCanvasRelativeCoords(event);
+      mouse.x = coords.x;
+      mouse.y = coords.y;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(earthMesh, false);
+
+      if (intersects.length > 0) {
+        const { lat, lng } = getLatLngFromIntersection(intersects[0]);
+        const feat = findFeatureAtLatLng(lng, lat);
+
+        if (feat) {
+          renderer.domElement.style.cursor = 'pointer';
+          if (hoveredFeature !== feat) {
+            hoveredFeature = feat;
+            redrawOverlay();
+          }
+
+          // Update tooltip
+          const name = feat.properties.name || feat.properties.NAME || feat.properties.admin || 'Territory';
+          tooltipEl.textContent = name;
+          tooltipEl.style.left = `${event.clientX - coords.rect.left}px`;
+          tooltipEl.style.top = `${event.clientY - coords.rect.top}px`;
+          tooltipEl.classList.add('active');
+          return;
+        }
+      }
+
+      // If hovering empty space or ocean
+      renderer.domElement.style.cursor = isMouseDown ? 'grabbing' : 'grab';
+      if (hoveredFeature !== null) {
+        hoveredFeature = null;
+        redrawOverlay();
+      }
+      tooltipEl.classList.remove('active');
+    });
+
+    // Pointer Down (tracking drag vs click)
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+      isMouseDown = true;
+      mouseDownPos = { x: event.clientX, y: event.clientY };
+      lastUserInteractionTime = performance.now();
+    });
+
+    // Pointer Up: Click detection
+    renderer.domElement.addEventListener('pointerup', (event) => {
+      isMouseDown = false;
+      const dist = Math.hypot(event.clientX - mouseDownPos.x, event.clientY - mouseDownPos.y);
+
+      // Only count as click if pointer didn't drag more than 5 pixels
+      if (dist < 5) {
+        handleClick(event);
+      }
+    });
+
+    function handleClick(event) {
+      const coords = getCanvasRelativeCoords(event);
+      mouse.x = coords.x;
+      mouse.y = coords.y;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(earthMesh, false);
+
+      if (intersects.length > 0) {
+        const { lat, lng } = getLatLngFromIntersection(intersects[0]);
+        const feature = findFeatureAtLatLng(lng, lat);
+
+        if (feature) {
+          // Requirement: Click on country/state/territory:
+          // 1. Raycaster converts to lat/lon & point-in-polygon
+          // 2. Stop auto-rotation immediately
+          // 3. Smoothly animate (ease-in-out, ~1.5s) to center front
+          // 4. Keep it stopped at that location
+          // 5. Highlight in RED (#ff1a1a, ~70% opacity fill with glowing outline)
+          // 6. Show clean label card with state name + country
+          selectTerritory(feature, lat, lng);
+        } else {
+          // Clicked ocean or empty space -> reset / clear selection
+          clearSelection();
+        }
+      } else {
+        clearSelection();
+      }
+    }
+
+    function selectTerritory(feature, hitLat, hitLng) {
+      selectedFeature = feature;
+      redrawOverlay();
+
+      // Extract State & Country names
+      const props = feature.properties || {};
+      const stateName = props.name || props.NAME || props.admin || 'State / Territory';
+      const countryName = props.admin || props.ADMIN || props.name || 'Country';
+
+      // Show Selection HUD Card
+      cardTitleEl.textContent = stateName;
+      cardMetaEl.textContent = stateName !== countryName ? `${countryName} • Admin-1 Territory` : `Country Jurisdiction`;
+      selectionCardEl.classList.add('active');
+
+      statusTextEl.textContent = `Centered on ${stateName} (${countryName}) • Auto-rotation Stopped`;
+      statusDotEl.style.background = '#ff1a1a';
+      statusDotEl.style.boxShadow = '0 0 14px #ff1a1a';
+
+      // Smoothly rotate globe to center target facing camera
+      // Use representative centroid if provided, else hit point
+      const targetLat = props.latitude ? Number(props.latitude) : hitLat;
+      const targetLng = props.longitude ? Number(props.longitude) : hitLng;
+
+      rotateToLatLng(targetLat, targetLng);
+    }
+
+    function clearSelection() {
+      selectedFeature = null;
+      redrawOverlay();
+      selectionCardEl.classList.remove('active');
+      statusTextEl.textContent = 'Global Orbit • Auto-rotation Active';
+      statusDotEl.style.background = '#4cc3ff';
+      statusDotEl.style.boxShadow = '0 0 10px #4cc3ff';
+
+      isAutoRotating = true;
+      isAnimatingToTarget = false;
+      lastUserInteractionTime = performance.now();
+    }
+
+    // Reset Button Handler
+    resetBtnEl.addEventListener('click', () => {
+      clearSelection();
+      // Smoothly level globe tilt back to equatorial baseline
+      animStartRotX = globeGroup.rotation.x;
+      animTargetRotX = 0;
+      isAnimatingToTarget = true;
+      animStartRotY = earthRotator.rotation.y;
+      animTargetRotY = earthRotator.rotation.y;
+      animationStartTime = performance.now();
+    });
+
+    // =========================================================================
+    // 10. MAIN ANIMATION LOOP (SMOOTH 60 FPS WITH DAMPING & TWEEN)
+    // =========================================================================
+    let lastFrameTime = performance.now();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const now = performance.now();
+      const deltaSec = Math.min((now - lastFrameTime) / 1000, 0.1);
+      lastFrameTime = now;
+
+      // Animate travelling node dashes along network arcs
+      animatedArcPulses.forEach(item => {
+        item.progress = (item.progress + item.speed * deltaSec) % 1.0;
+        const pt = item.curve.getPointAt(item.progress);
+        item.mesh.position.copy(pt);
+      });
+
+      // Camera Controls damping update
+      controls.update();
+
+      // Check auto-rotation resume condition:
+      // If user hasn't selected a state AND 3 seconds elapsed with no manual drag:
+      if (!selectedFeature && !isAnimatingToTarget) {
+        if (!controls.state || controls.state === -1) {
+          if (now - lastUserInteractionTime > 3000) {
+            isAutoRotating = true;
+          }
+        }
+      }
+
+      // Smooth Easing Animation when navigating to selected territory (1.5s ease-in-out)
+      if (isAnimatingToTarget) {
+        const elapsed = now - animationStartTime;
+        const t = Math.min(elapsed / ANIMATION_DURATION, 1.0);
+        const ease = easeInOutCubic(t);
+
+        earthRotator.rotation.y = animStartRotY + (animTargetRotY - animStartRotY) * ease;
+        globeGroup.rotation.x = animStartRotX + (animTargetRotX - animStartRotX) * ease;
+
+        if (t >= 1.0) {
+          isAnimatingToTarget = false;
+          // Keep it firmly stopped at this location (requirement 4)
+          isAutoRotating = false;
+        }
+      } else if (isAutoRotating && !selectedFeature) {
+        // Continuous slow smooth Y-axis auto-rotation (0.05 rad/sec, no wobble)
+        earthRotator.rotation.y += autoRotateSpeed * deltaSec;
+      }
+
+      // Render with post-processing bloom
+      composer.render();
+    }
+
+    animate();
+  </script>
+</body>
+</html>
